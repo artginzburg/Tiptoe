@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core, with no dependencies at all
+        run: swift test
+      - name: With the GitHub Releases adapter
+        run: swift test --traits GitHubSupport
+      - name: With the Sparkle adapter
+        run: swift build --traits SparkleSupport
+      # Nothing sensible ships both — a sandboxed app cannot use the GitHub
+      # path at all — but a consumer resolving the package with both traits
+      # enabled must still compile, and the two adapters share the core.
+      - name: With both adapters at once
+        run: swift build --traits SparkleSupport,GitHubSupport
