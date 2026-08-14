@@ -47,15 +47,17 @@ import Testing
     let gate = Gate("wedged xpc bridge") {
         await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             Task {
-                try? await Task.sleep(nanoseconds: 2 * NSEC_PER_SEC)
+                try? await Task.sleep(nanoseconds: 5 * NSEC_PER_SEC)
                 continuation.resume(returning: true)
             }
         }
     }
     let start = Date()
     #expect(await ask(gate, timeout: 0.05) == .timedOut)
-    // Comfortably above the 0.05 s timeout to absorb scheduling jitter, but
-    // far short of the gate's real 2 s answer — a version of `ask` that
-    // structurally waits for the gate would fail this, not merely run slow.
-    #expect(Date().timeIntervalSince(start) < 0.3)
+    // The bound is generous on purpose: it only has to sit between the 0.05 s
+    // timeout and the gate's own 5 s answer, so a version of `ask` that
+    // structurally waits for the gate fails it while a busy machine does not.
+    // A tighter bound measures the runner's scheduler rather than this package
+    // — 0.3 s here cost a red first CI run at 0.304 s.
+    #expect(Date().timeIntervalSince(start) < 1)
 }
