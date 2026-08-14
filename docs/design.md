@@ -55,6 +55,14 @@ One repository, three products, so a consumer links only what it uses.
 | `TiptoeSparkle` | Sparkle | sandboxed apps (WheelClick) |
 | `TiptoeGitHub` | mxcl/AppUpdater | unsandboxed apps (Adrafinil) |
 
+*(as built)* A fourth way of consuming this turned out to be necessary and is
+documented in [app-store-apps.md](app-store-apps.md): an app whose single target
+also ships to the Mac App Store cannot link the adapter at all, because SwiftPM
+links a product into every configuration and an updater in an App Store build is
+a rejection. Such an app compiles the sources into its own target instead, which
+is why both adapters import the core only `#if canImport(Tiptoe)` and avoid
+isolated default arguments.
+
 The upstream dependencies sit behind **package traits** (`swift-tools-version:
 6.1`), so `swift build` without a trait resolves neither Sparkle nor AppUpdater.
 This is not cosmetic: WheelClick's App Store build must contain *not one byte* of

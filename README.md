@@ -84,7 +84,9 @@ Button("Check for Updates…") { updates?.checkForUpdates() }
     .disabled(!(updates?.canCheckForUpdates ?? false))
 ```
 
-**Xcode projects and traits.** The manifest snippets above are how a Swift package declares the dependency, and `traits:` is what decides whether Sparkle or AppUpdater comes along at all. Adding the package through Xcode's own *Add Package Dependencies…* leaves that spelling nowhere to live unless your Xcode offers trait selection — so if it does not, keep the dependency in a package manifest your app already links, or a small local one, where the traits are explicit. Linking an adapter product without enabling its trait is not an error and not a warning: the module compiles to nothing, and the first sign is `TiptoeSparkle` not being found in scope.
+**Xcode projects.** Traits survive the trip: Xcode keeps them on the package reference (`traits = (GitHubSupport,);` in `project.pbxproj`), and without one the dependency resolves nothing at all. Linking an adapter product without enabling its trait is not an error and not a warning — the module compiles to nothing, and the first sign is `TiptoeSparkle` not being found in scope.
+
+**One target that also ships to the Mac App Store** needs a different route: an updater in an App Store build is grounds for rejection, and SwiftPM links a product into *every* configuration of a target, so the adapter cannot be kept out of that one. It is solvable — compile the sources instead of linking the product — and [docs/app-store-apps.md](docs/app-store-apps.md) has the recipe, the settings, and the measurements behind them.
 
 For the GitHub path, anything mxcl/AppUpdater offers beyond a repository name is reached by handing over a ready-made updater — artifact attestation, above all, which verifies GitHub's provenance for the binary that is about to replace the running app:
 
