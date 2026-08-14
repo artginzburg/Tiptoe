@@ -1,7 +1,8 @@
 # Tiptoe — design
 
 - **Date:** 2026-08-13
-- **Status:** Approved, not yet implemented
+- **Status:** Implemented 2026-08-14. Sections below marked *(as built)* record where
+  the finished package departs from what was designed, and why
 - **Deciders:** Arthur, with Claude
 
 ## What this is
@@ -71,8 +72,8 @@ TiptoeGitHub(owner: "kageroumado", repo: "adrafinil")
     .gate("agents are working") { await daemon.assertionsAreIdle }
     .start()
 
-// WheelClick, complete
-updates = TiptoeSparkle().start()
+// WheelClick — plus four SU… keys in Info.plist, see below
+TiptoeSparkle().start()
 ```
 
 - `gate(_:_:)` returns `Self`, so gates chain. Several may be registered; any one
@@ -92,6 +93,28 @@ updates = TiptoeSparkle().start()
 - The core exposes `pending` (what is waiting, and since when), `onWillInstall`,
   `onWaitingTooLong`, and `justUpdatedTo` / `acknowledge()` — the last pair being
   what a host turns into "Updated to 1.0.3".
+
+*(as built)* Four additions the design did not foresee, each forced by something
+found while building it:
+
+- **`hold` takes `retryable:`.** Sparkle's block can be invoked again; AppUpdater's
+  prepared update is spent the moment it is called, success or failure. Without the
+  distinction, a failed install left the engine retrying a dead download every
+  minute for hours, logging an error each time.
+- **`installNow()` returns its `Task`.** A host that acts on an explicit request may
+  want to await the outcome, and a test certainly does — the alternative was
+  sleeping and hoping.
+- **`onChecksFailing`.** A typo in `owner`/`repo` is the one path where the app
+  silently never updates *and* nothing ever reaches the host: no update is ever
+  held, so `onWaitingTooLong` cannot fire either. A streak of failed checks now
+  reports itself.
+- **`TiptoeSparkle` is inert without host configuration.** Everything hangs on
+  Sparkle's `willInstallUpdateOnQuit`, which it calls only after downloading
+  automatically — and automatic downloads are off by default. A host must ship
+  `SUFeedURL`, `SUPublicEDKey`, `SUEnableAutomaticChecks` and `SUAutomaticallyUpdate`;
+  without the last two the adapter does nothing and Sparkle asks the user a
+  question, which is the one thing this package promises never to happen. `start()`
+  says so in the log rather than overriding the user's own preference.
 
 ## When it is safe
 
@@ -173,6 +196,27 @@ version arrives while one is pending, it replaces the pending one (the old one's
 temporary DMG is discarded) and the clock keeps running — otherwise an app that
 ships weekly would never reach the later rungs.
 
+*(as built)* A third thing is stored, and it exists to keep the paragraph above
+from becoming a hazard: **the app's own version at the moment the wait began.**
+
+The wait was designed to end when Tiptoe installs — and Tiptoe is not the only
+thing that installs. Sparkle's own documentation says it will install a downloaded
+update when the app terminates, so somebody quitting the app in the evening ends
+the wait without telling us; Homebrew and a manually dragged DMG do the same. The
+recorded wait then survives forever, and the *next* update's very first check
+finds a wait months long — which lands it directly on the third rung, where five
+seconds of stillness is enough and an open window no longer blocks. The one rung
+that can do harm would be reached on day one, by an app that had done nothing
+wrong.
+
+So at startup the running version is compared with the recorded one. If they
+differ, the app was replaced by somebody else and the wait is cleared; and if the
+version that was pending is the one now running, that is precisely "the update
+landed", so the `justUpdatedTo` notice is set from it — which also fixes a gap
+nobody had noticed, since an update Sparkle installed on quit used to produce no
+notice at all. A recorded wait older than 90 days is discarded too: a Mac that
+booted with a wrong clock before NTP corrected it must not inherit rung three.
+
 ## Logging
 
 `os.Logger`, category `tiptoe`, subsystem taken from the host's bundle
@@ -212,11 +256,11 @@ with every copy — which is the point of giving the model away under a name.
 
 ## Order of work
 
-1. Repository, core, tests.
-2. `TiptoeGitHub` and `TiptoeSparkle`.
-3. README: the model, the ladder, both integrations, and a "when not to use this"
+1. ~~Repository, core, tests.~~ Done.
+2. ~~`TiptoeGitHub` and `TiptoeSparkle`.~~ Done.
+3. ~~README: the model, the ladder, both integrations, and a "when not to use this"
    section (the App Store forbids self-updating apps outright; a sandboxed app
-   needs the Sparkle path).
+   needs the Sparkle path).~~ Done.
 4. An issue to Adrafinil's maintainer proposing the change and showing what it
    costs them — before any PR, because it brings two dependencies they never
    asked for. PR after a reply.
@@ -227,9 +271,10 @@ with every copy — which is the point of giving the model away under a name.
 
 ## Risks
 
-- **Traits are new.** If SPM's platform check turns out to reject a macOS 12
-  package graph in some Xcode version, the fallback is plain products without
-  traits, at the cost of resolving unused dependencies.
+- ~~**Traits are new.**~~ Settled: with neither trait enabled a clean `swift build`
+  fetches nothing at all — empty checkouts, no `Package.resolved` written — and the
+  macOS 12 graph resolves with either trait on. The core really is dependency-free,
+  not merely unlinked.
 - **Adrafinil may decline.** Two new dependencies in a repository with 437 stars
   is a real ask. The issue-first order exists so the answer arrives before the
   work does, and the package is useful with one consumer regardless.
