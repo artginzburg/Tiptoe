@@ -1,8 +1,17 @@
 #if SparkleSupport
 import AppKit
 import Sparkle
-import Tiptoe
 import os
+
+// Conditional because this file is also meant to be compiled *into* a host's
+// own target, source-level, by an app that cannot link the product — one that
+// ships to the App Store from the same target, where linking anything Sparkle
+// would be fatal, and SwiftPM cannot vary linkage per build configuration.
+// Compiled that way there is no separate Tiptoe module to import, and the
+// types are already in scope.
+#if canImport(Tiptoe)
+import Tiptoe
+#endif
 
 /// Tiptoe for a sandboxed app.
 ///
@@ -19,8 +28,11 @@ public final class TiptoeSparkle: NSObject {
     private var controller: SPUStandardUpdaterController?
     private let log: Logger
 
-    public init(tiptoe: Tiptoe = Tiptoe()) {
-        self.tiptoe = tiptoe
+    public init(tiptoe: Tiptoe? = nil) {
+        // Not a default argument of `Tiptoe()`: evaluating one inside a
+        // `@MainActor` initializer is a Swift 6 rule, and this file is also
+        // compiled straight into hosts whose target is still Swift 5.
+        self.tiptoe = tiptoe ?? Tiptoe()
         log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Tiptoe", category: "tiptoe")
         super.init()
     }

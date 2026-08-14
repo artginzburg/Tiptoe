@@ -1,8 +1,14 @@
 #if GitHubSupport
 import AppUpdater
 import Foundation
-import Tiptoe
 import os
+
+// Conditional for the same reason as in TiptoeSparkle: compiled into a host's
+// own target rather than linked as a product, there is no separate Tiptoe
+// module and the types are already in scope.
+#if canImport(Tiptoe)
+import Tiptoe
+#endif
 
 /// Tiptoe for an app that ships notarized DMGs through GitHub Releases and is
 /// not sandboxed — which is the only way an app may replace its own bundle
@@ -43,12 +49,12 @@ public final class TiptoeGitHub {
         owner: String,
         repo: String,
         checkInterval: TimeInterval = 4 * 3600,
-        tiptoe: Tiptoe = Tiptoe()
+        tiptoe: Tiptoe? = nil
     ) {
         self.init(
             updater: AppUpdater(owner: owner, repo: repo),
             checkInterval: checkInterval,
-            tiptoe: tiptoe
+            tiptoe: tiptoe ?? Tiptoe()
         )
     }
 
@@ -72,12 +78,14 @@ public final class TiptoeGitHub {
     public convenience init(
         updater: AppUpdater,
         checkInterval: TimeInterval = 4 * 3600,
-        tiptoe: Tiptoe = Tiptoe()
+        tiptoe: Tiptoe? = nil
     ) {
+        // See TiptoeSparkle's initializer: a `Tiptoe()` default argument would
+        // shut this file out of hosts whose target is still Swift 5.
         self.init(
             source: AppUpdaterSource(updater: updater),
             checkInterval: checkInterval,
-            tiptoe: tiptoe
+            tiptoe: tiptoe ?? Tiptoe()
         )
     }
 
