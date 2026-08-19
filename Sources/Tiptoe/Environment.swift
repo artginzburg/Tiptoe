@@ -4,7 +4,11 @@ import Foundation
 extension Tiptoe {
     /// Everything the engine measures about the outside world, injected so the
     /// ladder can be tested in microseconds instead of days.
-    public struct Environment: Sendable {
+    /// `nonisolated` for the reason `QuietPolicy` carries at its own
+    /// declaration: a `Sendable` value with no isolation to inherit, pinned
+    /// here so a host compiling these sources with MainActor as its default
+    /// cannot make its statics and initializer isolated underneath it.
+    nonisolated public struct Environment: Sendable {
         public var now: @Sendable () -> Date
         public var secondsSinceInput: @Sendable () -> TimeInterval
         public var windows: @MainActor @Sendable () -> WindowSnapshot

@@ -28,7 +28,17 @@ public enum QuietVerdict: Sendable, Equatable {
 /// quiet would otherwise never be updated at all — and under Sparkle it is
 /// worse than never, because holding one installation stalls the whole update
 /// cycle, so a stale pending update blocks the fix that would have replaced it.
-public struct QuietPolicy: Sendable, Equatable {
+/// `nonisolated` on the type, not on its members: this is a `Sendable` value,
+/// and a value has no isolation to inherit. Saying so here is what makes the
+/// answer come from this declaration rather than from whoever compiles it —
+/// the package's own default is nonisolated, but a host may build with
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and these sources compile
+/// *inside* such a host when it vendors them rather than links the library,
+/// which is how WheelClick takes them. Without this, `default` and the
+/// initializer below become MainActor-isolated there while the default
+/// arguments naming them stay nonisolated and are evaluated at the call site
+/// — a warning at every use, in a file the host does not own.
+nonisolated public struct QuietPolicy: Sendable, Equatable {
 
     /// Which of the app's own windows stand in the way.
     public enum WindowRule: Sendable, Equatable {
