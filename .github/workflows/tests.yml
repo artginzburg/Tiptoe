@@ -20,3 +20,16 @@ jobs:
       # enabled must still compile, and the two adapters share the core.
       - name: With both adapters at once
         run: swift build --traits SparkleSupport,GitHubSupport
+      # A host may vendor these sources into its own target rather than link
+      # the library, and that target may default to MainActor isolation on a
+      # Swift 5 language mode. Then anything here that quietly inherits an
+      # isolation it never asked for warns in a file the host does not own,
+      # and nothing in this repository would have noticed — the two times it
+      # happened, the report came from a consumer. So compile the whole
+      # surface the way such a host does, and let a warning fail the run.
+      - name: As a host that vendors us compiles us
+        run: |
+          swift build --traits SparkleSupport,GitHubSupport \
+            -Xswiftc -swift-version -Xswiftc 5 \
+            -Xswiftc -default-isolation -Xswiftc MainActor \
+            -Xswiftc -warnings-as-errors
