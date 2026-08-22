@@ -100,6 +100,23 @@ updater.allowPrereleases = true
 TiptoeGitHub(updater: updater).start()
 ```
 
+## A setting, if the app offers one
+
+Plenty of apps put "install updates automatically" in front of the person, and an app that does has a problem this package used to make worse: with the setting off there is nothing to install silently, so the app still has to answer *is there a new version?* — and answering it meant a second poller, a second idea of "latest", and two requests a day to the same endpoint.
+
+So the check loop keeps running in both modes, and what it learns is readable either way:
+
+```swift
+updates = TiptoeGitHub(owner: "kageroumado", repo: "adrafinil")
+    .gate("agents are working") { await daemon.assertionsAreIdle }
+    .installsAutomatically(settings.autoInstall)   // and again whenever it changes
+    .start()
+```
+
+With it off, nothing is downloaded and nothing installs itself; `availableVersion` still says what exists, and `updateNow()` is there for the button that acts on it. With it on, everything is as before — and `availableVersion` is still worth reading, because it answers from the release itself rather than from a download, and so keeps answering when a download is what broke.
+
+Sparkle has this already, in its own shape: `SUAutomaticallyUpdate` is the person's to set, the adapter is inert without it, and a check somebody asks for goes through Sparkle's own windows.
+
 ## Sparkle setup
 
 The Sparkle adapter takes over the moment Sparkle has downloaded an update by itself — that is the only hook there is. So Sparkle has to be configured to download by itself, in the host app's Info.plist:
@@ -133,17 +150,20 @@ The clock measures *continuous* waiting, and it survives relaunches — otherwis
 
 The package shows nothing itself — no window, no notification, not a badge. Everything visible is the host's to decide, from these.
 
-Where they live: `justUpdatedTo`, `acknowledge()`, `pending`, `onWillInstall`, `onWaitingTooLong` and `installNow()` belong to the engine, reached through the adapter's `tiptoe` property — `updates.tiptoe.justUpdatedTo`. `onChecksFailing`, `checkNow()` and `stop()` are the adapter's own, called on it directly.
+Where they live: `justUpdatedTo`, `acknowledge()`, `pending`, `onWillInstall`, `onWaitingTooLong` and `installNow()` belong to the engine, reached through the adapter's `tiptoe` property — `updates.tiptoe.justUpdatedTo`. `availableVersion`, `installsAutomatically(_:)`, `updateNow()`, `onChecksFailing`, `checkNow()` and `stop()` are the adapter's own, called on it directly.
 
 | | |
 | --- | --- |
 | `justUpdatedTo` | The version installed while nobody was looking, or `nil`. The one line worth showing: *"Updated to 1.0.3"*, wherever the app already talks about itself. Survives relaunches, and survives an update that landed some other way — Sparkle installing it on quit, say. |
 | `acknowledge()` | Clears that notice, once the person has had a chance to see it. |
 | `pending` | The update currently waiting, with the version and the moment the wait began. `nil` when there is nothing to install. |
+| `availableVersion` | GitHub path only. The newest version published, when it is newer than the running app. A weaker claim than `pending`, and the one an "a new version is out" line wants: true from the moment the release exists, and still true when the download is what failed — the case where a host reporting from `pending` alone falls silent exactly when it had something to say. |
+| `installsAutomatically(_:)` | GitHub path only. What an "install updates automatically" setting sets, at launch or while the app runs. Off, the check loop keeps running and keeps answering `availableVersion`, but nothing is downloaded and nothing installs itself. |
 | `onWillInstall` | Called on the last quiet instant before the app is replaced. The process may not survive the next line, so anything to be recorded is recorded here. |
 | `onWaitingTooLong` | Fires once when a wait has run past two weeks. The package's own signals always yield eventually, so this means a host gate has been refusing all that time — the host decides whether that is worth saying out loud. |
 | `onChecksFailing` | GitHub path only. Fires once when update checks have been failing for about a day — a wrong repository name, a repository gone private. Without it, that is indistinguishable from "no update available", forever. |
-| `installNow()` | Installs immediately, whatever the Mac is doing — for a host acting on an explicit request from a person, and only then. |
+| `installNow()` | Installs immediately, whatever the Mac is doing — for a host acting on an explicit request from a person, and only then. Installs what is already held: on the GitHub path, `updateNow()` is the one a button should call. |
+| `updateNow()` | GitHub path only. Downloads if nothing is waiting, then installs immediately — the "Update Now" button, in either mode. False back means there was nothing newer, or the download could not be made; a successful install replaces the process and returns nothing anybody reads. |
 | `checkNow()` | GitHub path only. Looks for an update right now, out of band with the check loop; anything found is still held for a quiet moment. |
 | `stop()` | Stops both the polling and, on the GitHub path, the checking. Nothing already queued can land an install afterward. |
 

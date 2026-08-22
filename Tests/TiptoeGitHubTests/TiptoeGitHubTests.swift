@@ -19,16 +19,19 @@ private final class FailingSource: UpdateSource {
     /// the aeroplane. Answers "nothing newer", which is a successful check.
     var succeeds = false
 
-    func prepareLatest(alreadyHolding version: String?) async throws -> PreparedInstall? {
+    func check(alreadyHolding version: String?, prepare: Bool) async throws -> CheckOutcome {
         checks += 1
         guard succeeds else { throw error }
-        return nil
+        return .upToDate
     }
 }
 
 @MainActor
 private final class StubSource: UpdateSource {
     var version = "2.0.0"
+    /// Set when the running app is the newest there is — a release yanked, or
+    /// an app that has caught up with it.
+    var isUpToDate = false
     var installs = 0
     var discards = 0
     var checks = 0
@@ -48,23 +51,24 @@ private final class StubSource: UpdateSource {
     private(set) var depth = 0
     var deepestReentry = 4
 
-    func prepareLatest(alreadyHolding heldVersion: String?) async throws -> PreparedInstall? {
+    func check(alreadyHolding heldVersion: String?, prepare: Bool) async throws -> CheckOutcome {
         checks += 1
         depth += 1
         defer { depth -= 1 }
         if depth <= deepestReentry {
             await onPrepare?()
         }
-        guard version != heldVersion else { return nil }
+        guard !isUpToDate else { return .upToDate }
+        guard prepare, version != heldVersion else { return .available(version) }
         prepares += 1
-        return PreparedInstall(
+        return .prepared(PreparedInstall(
             version: version,
             install: { @MainActor [self] in
                 installs += 1
                 if failInstall { throw StubInstallFailure() }
             },
             discard: { @MainActor [self] in discards += 1 }
-        )
+        ))
     }
 }
 
@@ -201,6 +205,7 @@ private final class QuietBox: @unchecked Sendable {
 
     #expect(tiptoe.pending == nil)
     #expect(source.discards == 1)
+    #expect(github.availableVersion == nil)
 }
 
 /// `checkNow()` is public *and* driven by the poll loop, so two really can
@@ -304,5 +309,174 @@ private final class QuietBox: @unchecked Sendable {
     #expect(reported == 0)
     await github.checkNow()
     #expect(reported == 1)
+}
+
+// MARK: - Reporting without installing
+
+/// The mode an app is in when somebody has turned "install updates
+/// automatically" off. The question a person asks — is there a new version? —
+/// is the same question in both modes, and it is answered out of the same
+/// request, rather than out of a second updater standing beside this one.
+@MainActor
+@Test func reportingWithoutInstallingLearnsTheVersionAndDownloadsNothing() async {
+    let source = StubSource()
+    let (github, tiptoe) = harness(source)
+    github.installsAutomatically(false)
+
+    await github.checkNow()
+
+    #expect(github.availableVersion == "2.0.0")
+    #expect(source.prepares == 0)
+    #expect(source.installs == 0)
+    #expect(tiptoe.pending == nil)
+}
+
+/// And no quiet moment changes that. The engine is stopped, not merely
+/// unfed — a host that said it does not install by itself must not be
+/// installed for by a stray evaluation.
+@MainActor
+@Test func aQuietMomentInstallsNothingForAHostThatOnlyReports() async {
+    let source = StubSource()
+    let (github, tiptoe) = harness(source)
+    github.installsAutomatically(false)
+
+    await github.checkNow()
+    await tiptoe.evaluate()
+
+    #expect(source.installs == 0)
+}
+
+/// The version is not a consolation prize for the reporting mode: a host that
+/// installs silently still wants the weaker fact, because `pending` goes
+/// quiet whenever a download cannot be made and this does not.
+@MainActor
+@Test func installingSilentlyReportsTheVersionToo() async {
+    let source = StubSource()
+    let (github, tiptoe) = harness(source)
+
+    await github.checkNow()
+
+    #expect(github.availableVersion == "2.0.0")
+    #expect(tiptoe.pending?.version == "2.0.0")
+}
+
+/// The dedup that keeps a waiting release from being downloaded twice used to
+/// answer "nothing newer", which is a different sentence — and the one a host
+/// would have drawn "you are up to date" from, over a downloaded update.
+@MainActor
+@Test func theVersionSurvivesAChecksThatSkipsTheDownload() async {
+    let source = StubSource()
+    let (github, _) = harness(source)
+
+    await github.checkNow()
+    await github.checkNow()
+
+    #expect(source.prepares == 1)
+    #expect(github.availableVersion == "2.0.0")
+}
+
+/// A release pulled back after it was announced. Rare, but the only way the
+/// answer goes from a version to nothing, and a host drawing a badge from it
+/// needs the badge to go away.
+@MainActor
+@Test func aReleaseThatGoesAwayClearsTheVersion() async {
+    let source = StubSource()
+    let (github, _) = harness(source)
+
+    await github.checkNow()
+    #expect(github.availableVersion == "2.0.0")
+
+    source.isUpToDate = true
+    await github.checkNow()
+
+    #expect(github.availableVersion == nil)
+}
+
+/// Turning the setting back on: the next check downloads and hands over, and
+/// the engine is running again to receive it.
+@MainActor
+@Test func turningInstallsBackOnStartsDownloadingAgain() async {
+    let source = StubSource()
+    let (github, tiptoe) = harness(source)
+    github.installsAutomatically(false)
+    await github.checkNow()
+    #expect(tiptoe.pending == nil)
+
+    github.installsAutomatically(true)
+    await github.checkNow()
+
+    #expect(source.prepares == 1)
+    #expect(tiptoe.pending?.version == "2.0.0")
+
+    await tiptoe.evaluate()
+    #expect(source.installs == 1)
+}
+
+// MARK: - Somebody asking
+
+/// The button a reporting host puts under "a new version is out". Nothing was
+/// downloaded, so `tiptoe.installNow()` alone would install nothing; this
+/// fetches first.
+@MainActor
+@Test func updateNowDownloadsForAHostThatHasNotBeenDownloading() async {
+    let source = StubSource()
+    let (github, _) = harness(source)
+    github.installsAutomatically(false)
+    await github.checkNow()
+
+    let acted = await github.updateNow()
+
+    #expect(acted)
+    #expect(source.prepares == 1)
+    #expect(source.installs == 1)
+}
+
+/// And when the silent path already has the DMG, the button spends no
+/// bandwidth at all — it stops the waiting, nothing more.
+@MainActor
+@Test func updateNowUsesTheDownloadTheSilentPathAlreadyMade() async {
+    let source = StubSource()
+    let (github, _) = harness(source)
+    await github.checkNow()
+
+    let acted = await github.updateNow()
+
+    #expect(acted)
+    #expect(source.prepares == 1)
+    #expect(source.installs == 1)
+}
+
+/// Pressed by somebody on the newest version there is. The host has a button
+/// to re-enable and a sentence to show, and neither is served by pretending
+/// something happened.
+@MainActor
+@Test func updateNowSaysSoWhenThereIsNothingToInstall() async {
+    let source = StubSource()
+    source.isUpToDate = true
+    let (github, _) = harness(source)
+
+    let acted = await github.updateNow()
+
+    #expect(!acted)
+    #expect(source.installs == 0)
+    #expect(github.availableVersion == nil)
+}
+
+/// A person pressing a button on a train is not evidence about the
+/// repository. The streak that reports a wrong `owner`/`repo` is calibrated
+/// to a day of the loop's own ticks, and a button could spend it in seconds.
+@MainActor
+@Test func aManualUpdateThatFailsIsNotHeldAgainstTheRepository() async {
+    let source = FailingSource()
+    let (github, _) = harness(source, checkInterval: 12 * 3600)
+    var reported = 0
+    github.onChecksFailing = { _ in reported += 1 }
+
+    for _ in 0..<5 {
+        let acted = await github.updateNow()
+        #expect(!acted)
+    }
+
+    #expect(reported == 0)
 }
 #endif
