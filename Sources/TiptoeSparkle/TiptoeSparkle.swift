@@ -27,6 +27,16 @@ public final class TiptoeSparkle: NSObject {
     public let tiptoe: Tiptoe
     private var controller: SPUStandardUpdaterController?
     private let log: Logger
+    /// Set by ``alignChecks(_:)``; see AlignedChecks.swift. One property rather
+    /// than the timer, the observer and the schedule separately, so this file
+    /// stays about starting an updater and handing installs to Tiptoe.
+    var alignedChecks: AlignedChecks?
+
+    /// For AlignedChecks, which needs to read `lastUpdateCheckDate` and
+    /// `updateCheckInterval` and to ask for a background check. Deliberately
+    /// not public: a host that wants the updater itself has outgrown this
+    /// adapter.
+    var updater: SPUUpdater? { controller?.updater }
 
     public init(tiptoe: Tiptoe? = nil) {
         // Not a default argument of `Tiptoe()`: evaluating one inside a
@@ -73,11 +83,16 @@ public final class TiptoeSparkle: NSObject {
             log.error("Sparkle is not downloading updates automatically, so Tiptoe will never be handed one: set SUAutomaticallyUpdate (and SUEnableAutomaticChecks) to true in the app's Info.plist")
         }
         tiptoe.start()
+        // A schedule asked for before the updater existed was stored, not
+        // armed; this is where it becomes real.
+        alignedChecks?.arm()
         return self
     }
 
     public func stop() {
         tiptoe.stop()
+        alignedChecks?.stop()
+        alignedChecks = nil
         controller = nil
         TiptoeRegistry.release(self)
     }

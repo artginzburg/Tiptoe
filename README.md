@@ -130,6 +130,33 @@ The Sparkle adapter takes over the moment Sparkle has downloaded an update by it
 
 **Without the last two, the adapter is inert**: nothing is ever downloaded automatically, so nothing is ever handed to Tiptoe, and no update ever installs quietly. `start()` says so at `error` level in the log rather than fixing it in code — Sparkle is explicit that an app must not override this at launch, because after the first run it is the person's own preference.
 
+## One grid, not a thousand phases
+
+Sparkle checks at `lastUpdateCheckDate + updateCheckInterval`. The interval is shared, the *phase* is not: whichever moment an install first ran is the moment it will ask in for the rest of its life. Over an install base those accidents spread evenly, and a fleet arriving at every hour of every day is the worst shape a feed server can be handed.
+
+It is worst for exactly the servers a small app can afford. A CDN in front of the appcast almost never sees a second request inside one TTL, because the arrivals fragment across points of presence faster than they accumulate — so the cache is paid for and never hits. A scale-to-zero backend is worse still: it sleeps after some idle timeout and is billed by the wall clock, so a hundred arrivals at a hundred unrelated moments buy a hundred full idle timeouts, while the same hundred inside one clump buy one.
+
+`alignChecks` snaps the check to a wall-clock grid every install computes identically:
+
+```swift
+updates = TiptoeSparkle().start().alignChecks()   // once a day, on the hour
+updates = TiptoeSparkle().start().alignChecks(CheckSchedule(period: 43200, alignment: 900))
+```
+
+The period is unchanged — this is not a way to check more often, and `period` still governs how much time must pass. Only the *moment* moves, to the first grid instant at or after the check falls due.
+
+The arithmetic lives in [`CheckSchedule`](Sources/Tiptoe/CheckSchedule.swift), which knows nothing about Sparkle and is tested on its own; the adapter contributes a timer, a wake notification and two calls into `SPUUpdater`.
+
+Measured on WheelClick's own arrival times, snapping the fleet to the hour took its database from ~123 to ~38 compute-hours a month, against a cap of 100. The saving is superlinear in a way that is easy to get wrong: halving the number of requests barely moved the bill, and aligning them without halving anything moved it by two thirds. What is billed is the number of separated arrival clusters, not the number of requests.
+
+**What it costs the person: one grid step of latency, at most.** The rule is "the first slot at or after it fell due", never "the next slot tomorrow" — a Mac that slept through its slot checks at the following one, minutes after waking, not a period later. With the default hour, an update is found at most 59 minutes later than Sparkle would have found it, against a period of a day. Keep the grid well under the period for that reason: an hour always has a slot near any waking moment, while a daily grid would be missed forever by a Mac that sleeps at the same hour every night.
+
+It tends to make the check *faster*, in fact. A scattered request has good odds of being the one that finds the server asleep and pays for the cold start; on a grid only the first request in each clump does, and the rest arrive to something warm.
+
+None of this writes to Sparkle's settings. `updateCheckInterval` is a preference that may be the person's own, and Sparkle's header is explicit that an app must not set it on launch — so the aligned check is timed to land inside that window rather than to move it, which means checks come a grid step sooner than the period given, and the shorter of the two periods wins. Sparkle's own timer stays armed underneath as the backstop for a Mac that was asleep for both. Someone who has turned automatic checks off is left alone entirely.
+
+All of it is opt-in: without a call to `alignChecks`, `TiptoeSparkle` schedules nothing, observes nothing and writes nothing, exactly as before.
+
 ## The ladder
 
 The Mac may never be perfectly quiet. An app that waits for ideal conditions and never gets them simply never updates — and under Sparkle it's worse than that, because holding one installation stalls the whole update cycle, so a stale pending update blocks the very fix that would have replaced it. So the requirement relaxes the longer an update has been waiting:
