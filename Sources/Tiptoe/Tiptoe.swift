@@ -65,6 +65,7 @@ public final class Tiptoe {
         store = Store(defaults: defaults)
         log = Logger(subsystem: subsystem, category: "tiptoe")
         reconcileRecordedWait()
+        reconcileRecordedNotice()
     }
 
     /// A wait only means something if the app it was recorded against is still
@@ -86,7 +87,7 @@ public final class Tiptoe {
 
         let running = environment.appVersion()
         if store.appVersion != running {
-            if store.pendingVersion == running {
+            if let pending = store.pendingVersion, sameVersion(pending, running) {
                 // The very update this wait was for landed some other way.
                 // Which also means the host's "Updated to X" line is owed —
                 // nothing else in the package is in a position to notice.
@@ -109,6 +110,24 @@ public final class Tiptoe {
             log.debug("a wait \(Int(waited / 86400)) days old is not a wait; starting the clock over")
             store.clearWait()
         }
+    }
+
+    /// "Updated to X" is only true while X is the version that is running.
+    ///
+    /// The notice is written just before the swap and cleared by the host's
+    /// ``acknowledge()`` — and a person who never opens the place the host
+    /// shows it in never acknowledges. The record then outlives the next
+    /// Homebrew upgrade, the next dragged-in DMG, a downgrade: 1.12 launches
+    /// announcing "Updated to 1.11", at every launch, for as long as that
+    /// person keeps not looking. Checked once, here, against the bundle, the
+    /// way the wait is just above; a notice the wait reconciliation has only
+    /// just written names the running version by construction and passes.
+    private func reconcileRecordedNotice() {
+        guard let noticed = store.justUpdatedTo else { return }
+        let running = environment.appVersion()
+        if sameVersion(noticed, running) { return }
+        log.debug("the \(noticed, privacy: .public) notice outlived its version; the app is now \(running, privacy: .public)")
+        store.justUpdatedTo = nil
     }
 
     // MARK: - Setting up

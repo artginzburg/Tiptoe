@@ -181,7 +181,7 @@ Where they live: `justUpdatedTo`, `acknowledge()`, `pending`, `onWillInstall`, `
 
 | | |
 | --- | --- |
-| `justUpdatedTo` | The version installed while nobody was looking, or `nil`. The one line worth showing: *"Updated to 1.0.3"*, wherever the app already talks about itself. Survives relaunches, and survives an update that landed some other way — Sparkle installing it on quit, say. |
+| `justUpdatedTo` | The version installed while nobody was looking, or `nil`. The one line worth showing: *"Updated to 1.0.3"*, wherever the app already talks about itself. Survives relaunches, and survives an update that landed some other way — Sparkle installing it on quit, say. Dropped on its own once the app runs as some other version, so a notice nobody opened cannot announce 1.11 from inside 1.12. |
 | `acknowledge()` | Clears that notice, once the person has had a chance to see it. |
 | `pending` | The update currently waiting, with the version and the moment the wait began. `nil` when there is nothing to install. |
 | `availableVersion` | GitHub path only. The newest version published, when it is newer than the running app. A weaker claim than `pending`, and the one an "a new version is out" line wants: true from the moment the release exists, and still true when the download is what failed — the case where a host reporting from `pending` alone falls silent exactly when it had something to say. |
