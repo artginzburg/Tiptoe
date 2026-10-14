@@ -311,6 +311,22 @@ private final class Harness {
     #expect(harness.tiptoe.pending?.waitingSince == started)
 }
 
+/// The versions on either side of that comparison come from different places
+/// — the tag through the adapter, the bundle through the environment — and
+/// can spell one version two ways. `v1.4.0` landing where `1.4` now runs is
+/// still the update that was waiting.
+@MainActor
+@Test func anUpdateThatLandedSomeOtherWayIsStillRecognisedAcrossSpellings() {
+    let harness = Harness(appVersion: "1.4") { store in
+        store.waitingSince = Date(timeIntervalSince1970: 900_000)
+        store.pendingVersion = "v1.4.0"
+        store.appVersion = "1.3"
+    }
+
+    #expect(harness.tiptoe.justUpdatedTo == "1.4")
+    #expect(Store(defaults: harness.defaults).waitingSince == nil)
+}
+
 /// A Mac whose clock was wrong at boot — before NTP corrected it — can leave
 /// behind a wait nobody served. Seven days of genuine waiting is what makes
 /// the last rung defensible; 200 days that passed in a second is not.
@@ -324,4 +340,53 @@ private final class Harness {
 
     #expect(Store(defaults: harness.defaults).waitingSince == nil)
     #expect(harness.tiptoe.justUpdatedTo == nil)
+}
+
+// MARK: - A notice only counts while it names the running app
+
+/// `justUpdatedTo` is cleared by `acknowledge()`, and a person who never opens
+/// the place the host shows it in never acknowledges. Meanwhile the next
+/// version arrives by Homebrew or a dragged-in DMG — nothing that goes through
+/// `install()` — and 1.12 launches announcing "Updated to 1.11".
+@MainActor
+@Test func aNoticeForAVersionNoLongerRunningIsDropped() {
+    let harness = Harness(appVersion: "1.5.0") { store in
+        store.justUpdatedTo = "1.4.0"
+    }
+
+    #expect(harness.tiptoe.justUpdatedTo == nil)
+    // Dropped from the store too, so the next launch has nothing to reconcile.
+    #expect(Store(defaults: harness.defaults).justUpdatedTo == nil)
+}
+
+/// A downgrade is the same story told backwards: nothing was installed, so
+/// nothing is announced.
+@MainActor
+@Test func aNoticeFromAVersionNewerThanTheRunningOneIsDropped() {
+    let harness = Harness(appVersion: "1.3.0") { store in
+        store.justUpdatedTo = "1.4.0"
+    }
+
+    #expect(harness.tiptoe.justUpdatedTo == nil)
+}
+
+@MainActor
+@Test func aNoticeForTheRunningVersionWaitsToBeAcknowledged() {
+    let harness = Harness(appVersion: "1.4.0") { store in
+        store.justUpdatedTo = "1.4.0"
+    }
+
+    #expect(harness.tiptoe.justUpdatedTo == "1.4.0")
+}
+
+/// The notice is written from the tag's version and checked against the
+/// bundle's, and a host whose bundle carries `1.5` for the `v1.5.0` release
+/// must not lose every notice to the spelling.
+@MainActor
+@Test func aNoticeSurvivesTheTagAndTheBundleSpellingTheVersionDifferently() {
+    let harness = Harness(appVersion: "1.5") { store in
+        store.justUpdatedTo = "1.5.0"
+    }
+
+    #expect(harness.tiptoe.justUpdatedTo == "1.5.0")
 }
