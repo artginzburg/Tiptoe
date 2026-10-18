@@ -280,45 +280,69 @@ public final class TiptoeGitHub {
     /// in either mode — `tiptoe.installNow()` installs what is already held,
     /// which in the reporting mode is nothing.
     ///
+    /// The source is asked first even when a download is waiting. The loop
+    /// fetched that download at its own pace, and by the time somebody
+    /// presses the button it can be a release behind — a day old, in an app
+    /// that ships daily — and the one thing the press means is "the newest".
+    /// When the source confirms the waiting download is still the newest,
+    /// that is one metadata request and no download, and the waiting one is
+    /// what gets installed. When the source cannot be reached, the waiting
+    /// download is installed as it stands: verified and in hand beats nothing,
+    /// on a train.
+    ///
     /// Returns false when there was nothing newer to install, or when the
     /// download could not be prepared: the two outcomes a host can still say
     /// something useful about. A successful install replaces the process, so
     /// nothing meaningful comes back on that path.
     @discardableResult
     public func updateNow() async -> Bool {
-        if waiting == nil {
-            guard !isChecking else {
-                log.debug("a check is already running; not starting a second one for an explicit install")
-                return false
-            }
-            isChecking = true
-            defer { isChecking = false }
-            do {
-                let outcome = try await source.check(alreadyHolding: nil, prepare: true)
-                // Reaching the repository says as much here as it does from
-                // the loop. A failure does not count the other way, though:
-                // the streak is calibrated to a day of ticks, and somebody
-                // pressing a button on a train would otherwise spend it.
-                consecutiveFailures = 0
-                hasReportedFailures = false
-                switch outcome {
-                case .upToDate:
-                    availableVersion = nil
-                    return false
-                case .available(let version):
-                    availableVersion = version
-                    return false
-                case .prepared(let prepared):
-                    availableVersion = prepared.version
-                    await handOver(prepared)
-                }
-            } catch {
-                log.error("preparing an update somebody asked for failed: \(error.localizedDescription, privacy: .public)")
-                return false
-            }
-        }
+        guard await holdNewest() else { return false }
         await tiptoe.installNow().value
         return true
+    }
+
+    /// Leaves `waiting` holding the newest release there is, or says there is
+    /// nothing to install.
+    private func holdNewest() async -> Bool {
+        guard !isChecking else {
+            log.debug("a check is already running; not starting a second one for an explicit install")
+            return false
+        }
+        isChecking = true
+        defer { isChecking = false }
+        do {
+            let outcome = try await source.check(alreadyHolding: waiting?.version, prepare: true)
+            // Reaching the repository says as much here as it does from
+            // the loop. A failure does not count the other way, though:
+            // the streak is calibrated to a day of ticks, and somebody
+            // pressing a button on a train would otherwise spend it.
+            consecutiveFailures = 0
+            hasReportedFailures = false
+            switch outcome {
+            case .upToDate:
+                // Nothing to install, whatever the loop may be holding: a
+                // download waiting here is for a release the source no longer
+                // lists, and the button is not the place to decide its fate.
+                availableVersion = nil
+                return false
+            case .available(let version):
+                // With `prepare` on, the source skips the download for one
+                // reason: the release it found is the one already waiting.
+                availableVersion = version
+                return waiting?.version == version
+            case .prepared(let prepared):
+                availableVersion = prepared.version
+                await handOver(prepared)
+                return true
+            }
+        } catch {
+            guard waiting == nil else {
+                log.error("could not confirm the newest release: \(error.localizedDescription, privacy: .public); installing the download already in hand")
+                return true
+            }
+            log.error("preparing an update somebody asked for failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 
     /// Cancellation reaches here by two spellings: structured concurrency's

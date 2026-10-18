@@ -35,6 +35,9 @@ private final class StubSource: UpdateSource {
     var installs = 0
     var discards = 0
     var checks = 0
+    /// Set to make every check throw from here on: the Mac went into a
+    /// tunnel after the loop had already downloaded something.
+    var failCheck = false
     /// How many times a `PreparedInstall` was actually handed back, as
     /// opposed to `checks`, which counts every call including the ones the
     /// `alreadyHolding` dedup turns away.
@@ -53,6 +56,7 @@ private final class StubSource: UpdateSource {
 
     func check(alreadyHolding heldVersion: String?, prepare: Bool) async throws -> CheckOutcome {
         checks += 1
+        if failCheck { throw StubCheckFailure() }
         depth += 1
         defer { depth -= 1 }
         if depth <= deepestReentry {
@@ -431,8 +435,9 @@ private final class QuietBox: @unchecked Sendable {
     #expect(source.installs == 1)
 }
 
-/// And when the silent path already has the DMG, the button spends no
-/// bandwidth at all — it stops the waiting, nothing more.
+/// And when the silent path already has the DMG, the button spends one
+/// metadata request confirming it is still the newest, and no download — it
+/// stops the waiting, nothing more.
 @MainActor
 @Test func updateNowUsesTheDownloadTheSilentPathAlreadyMade() async {
     let source = StubSource()
@@ -442,8 +447,64 @@ private final class QuietBox: @unchecked Sendable {
     let acted = await github.updateNow()
 
     #expect(acted)
+    #expect(source.checks == 2)
     #expect(source.prepares == 1)
     #expect(source.installs == 1)
+}
+
+/// The loop downloaded 2.0.0 yesterday; 2.1.0 came out this morning. A
+/// person pressing the button now means the newest, and would otherwise
+/// relaunch into a release that is already behind — with the next tick
+/// then announcing the one they just missed.
+@MainActor
+@Test func updateNowReplacesADownloadThatFellBehind() async {
+    let source = StubSource()
+    let (github, tiptoe) = harness(source)
+    await github.checkNow()
+    source.version = "2.1.0"
+
+    let acted = await github.updateNow()
+
+    #expect(acted)
+    #expect(source.prepares == 2)
+    #expect(source.discards == 1)
+    #expect(source.installs == 1)
+    #expect(github.availableVersion == "2.1.0")
+    #expect(tiptoe.justUpdatedTo == "2.1.0")
+}
+
+/// The loop downloaded something; the button is pressed in a tunnel. A
+/// verified download in hand is still the best thing on offer.
+@MainActor
+@Test func updateNowInstallsTheDownloadInHandWhenTheSourceIsOutOfReach() async {
+    let source = StubSource()
+    let (github, _) = harness(source)
+    await github.checkNow()
+    source.failCheck = true
+
+    let acted = await github.updateNow()
+
+    #expect(acted)
+    #expect(source.prepares == 1)
+    #expect(source.installs == 1)
+}
+
+/// The loop downloaded a release that was since taken down: the source now
+/// says the running app is the newest. The button installs nothing and the
+/// host's "nothing to install" sentence is the true one; what the loop is
+/// holding stays the loop's business, as it does on the loop's own ticks.
+@MainActor
+@Test func updateNowInstallsNothingWhenTheSourceSaysTheAppIsTheNewest() async {
+    let source = StubSource()
+    let (github, _) = harness(source)
+    await github.checkNow()
+    source.isUpToDate = true
+
+    let acted = await github.updateNow()
+
+    #expect(!acted)
+    #expect(source.installs == 0)
+    #expect(github.availableVersion == nil)
 }
 
 /// Pressed by somebody on the newest version there is. The host has a button
