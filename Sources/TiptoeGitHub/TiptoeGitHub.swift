@@ -305,8 +305,12 @@ public final class TiptoeGitHub {
     /// nothing to install.
     private func holdNewest() async -> Bool {
         guard !isChecking else {
+            // The loop's own check is in flight, and may be downloading for
+            // minutes. Saying "nothing to install" meanwhile would be false
+            // whenever a download is already waiting, so that one goes in as
+            // it stands — the same rule as a source out of reach.
             log.debug("a check is already running; not starting a second one for an explicit install")
-            return false
+            return waiting != nil
         }
         isChecking = true
         defer { isChecking = false }

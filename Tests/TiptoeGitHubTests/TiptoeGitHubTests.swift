@@ -507,6 +507,27 @@ private final class QuietBox: @unchecked Sendable {
     #expect(github.availableVersion == nil)
 }
 
+/// Pressed while the loop's own check is in flight — downloading a newer
+/// release, which can take minutes. The download already waiting is in hand,
+/// and "nothing to install" would be false.
+@MainActor
+@Test func updateNowDuringALoopCheckInstallsTheDownloadInHand() async {
+    let source = StubSource()
+    let (github, _) = harness(source)
+    await github.checkNow()
+    source.version = "2.1.0"
+    var acted = false
+    source.onPrepare = { [weak github] in
+        guard let github else { return }
+        acted = await github.updateNow()
+    }
+
+    await github.checkNow()
+
+    #expect(acted)
+    #expect(source.installs == 1)
+}
+
 /// Pressed by somebody on the newest version there is. The host has a button
 /// to re-enable and a sentence to show, and neither is served by pretending
 /// something happened.
