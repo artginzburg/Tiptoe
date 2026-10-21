@@ -390,3 +390,101 @@ private final class Harness {
 
     #expect(harness.tiptoe.justUpdatedTo == "1.5.0")
 }
+
+/// With nothing to install there is nothing to poll for, and a timer that
+/// wakes the app once a minute to learn that is a cost paid all day long.
+@MainActor
+@Test func pollsOnlyWhileAnUpdateIsWaiting() async {
+    let harness = Harness(policy: fastPolling)
+    harness.box.secondsSinceInput = 3
+    harness.tiptoe.start()
+    defer { harness.tiptoe.stop() }
+    #expect(!harness.tiptoe.isPolling)
+
+    harness.hold()
+    #expect(harness.tiptoe.isPolling)
+
+    await letTheHoldEvaluationPass()
+    harness.box.secondsSinceInput = 9999
+    #expect(await eventually { harness.installs == 1 })
+    #expect(await eventually { !harness.tiptoe.isPolling })
+}
+
+/// The install the loop itself lands must not run inside a task the loop has
+/// cancelled on the way: mxcl/AppUpdater's relaunch sleeps, and a sleep in a
+/// cancelled task throws at once, so every silent install would fail.
+@MainActor
+@Test func anInstallTheLoopLandsIsNotCancelled() async {
+    let harness = Harness(policy: fastPolling)
+    harness.box.secondsSinceInput = 3
+    harness.tiptoe.start()
+    defer { harness.tiptoe.stop() }
+    var completed = false
+    harness.tiptoe.hold(version: "1.4.0", retryable: false) {
+        try await Task.sleep(nanoseconds: 1_000_000)
+        completed = true
+    }
+
+    await letTheHoldEvaluationPass()
+    harness.box.secondsSinceInput = 9999
+    #expect(await eventually { completed })
+}
+
+@MainActor
+@Test func aRetryableInstallThatFailedKeepsThePollGoing() async {
+    let harness = Harness(policy: fastPolling)
+    harness.box.secondsSinceInput = 3
+    harness.tiptoe.start()
+    defer { harness.tiptoe.stop() }
+    var attempts = 0
+    harness.tiptoe.hold(version: "1.4.0") {
+        attempts += 1
+        throw HarnessInstallFailure()
+    }
+
+    await letTheHoldEvaluationPass()
+    harness.box.secondsSinceInput = 9999
+    #expect(await eventually { attempts >= 3 })
+    #expect(harness.tiptoe.pending != nil)
+    #expect(harness.tiptoe.isPolling)
+}
+
+/// Held while stopped, the evaluation `hold()` spawns does nothing, so
+/// `start()` looks at once rather than a whole poll interval later.
+@MainActor
+@Test func anUpdateHeldWhileStoppedIsLookedAtOnStart() async {
+    let harness = Harness()
+    harness.tiptoe.start()
+    harness.tiptoe.stop()
+    harness.hold()
+    await letTheHoldEvaluationPass()
+    #expect(harness.installs == 0)
+    #expect(!harness.tiptoe.isPolling)
+
+    harness.tiptoe.start()
+    defer { harness.tiptoe.stop() }
+    #expect(await eventually { harness.installs == 1 })
+}
+
+private var fastPolling: QuietPolicy {
+    var policy = QuietPolicy.default
+    policy.pollInterval = 0.01
+    return policy
+}
+
+/// `hold()` evaluates at once, in a task of its own. Going quiet before that
+/// runs would let it, rather than the loop, land the install.
+@MainActor
+private func letTheHoldEvaluationPass() async {
+    try? await Task.sleep(nanoseconds: 50_000_000)
+}
+
+/// Waits for something the poll loop does on its own schedule.
+@MainActor
+private func eventually(_ condition: () -> Bool) async -> Bool {
+    for _ in 0..<200 {
+        if condition() { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return condition()
+}

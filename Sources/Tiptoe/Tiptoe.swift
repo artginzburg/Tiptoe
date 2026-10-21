@@ -30,7 +30,12 @@ public final class Tiptoe {
     /// alongside `installAction` by every `hold()` call; only meaningful
     /// while `installAction` is non-nil.
     private var installRetryable = true
+    /// Runs only while something is ``pending``: with nothing to install there
+    /// is nothing to ask the sensors, and a timer that wakes the process once
+    /// a minute to learn exactly that costs a wake-up every app shipping this
+    /// package pays, all day, for the 99% of the time no update is waiting.
     private var pollTask: Task<Void, Never>?
+    private var isStarted = false
     /// Each observer with the centre it came from: the screen-lock notification
     /// is distributed, the rest are the workspace's, and an observer must be
     /// removed from the centre that registered it.
@@ -41,7 +46,9 @@ public final class Tiptoe {
     /// is paused.
     private var stopped = false
 
-    public private(set) var pending: Pending?
+    public private(set) var pending: Pending? {
+        didSet { pollWhilePending() }
+    }
 
     /// Called just before the app is replaced. The process may not survive the
     /// next line, so a host that wants to record something records it here.
@@ -149,28 +156,62 @@ public final class Tiptoe {
 
     @discardableResult
     public func start() -> Self {
-        guard pollTask == nil else { return self }
+        guard !isStarted else { return self }
+        isStarted = true
         stopped = false
         TiptoeRegistry.retain(self)
         observeQuietMoments()
-        pollTask = Task { [weak self, interval = policy.pollInterval] in
-            while !Task.isCancelled {
-                await self?.evaluate()
-                try? await Task.sleep(nanoseconds: nanoseconds(interval, fallback: 60))
-            }
+        if pending != nil {
+            // Held while stopped: the evaluation `hold()` spawned found the
+            // instance stopped and did nothing, so nobody has looked yet.
+            Task { await evaluate() }
         }
+        pollWhilePending()
         return self
     }
 
     public func stop() {
+        isStarted = false
         stopped = true
-        pollTask?.cancel()
-        pollTask = nil
+        stopPolling()
         for observer in observers {
             observer.center.removeObserver(observer.token)
         }
         observers.removeAll()
         TiptoeRegistry.release(self)
+    }
+
+    /// Whether the poll loop is running. For this package's own tests.
+    var isPolling: Bool { pollTask != nil }
+
+    /// Sleeps first: whatever made something pending — `hold()`, `start()`,
+    /// or a failed install putting its update back — has just evaluated, or
+    /// is about to.
+    ///
+    /// The loop retires itself once nothing is pending, rather than being
+    /// cancelled when `pending` clears: that happens inside `install()`, and
+    /// when the tick doing the installing is this loop's own, cancelling it
+    /// would hand the install a cancelled task — which any `Task.sleep` in
+    /// it (mxcl/AppUpdater's relaunch has one) answers by throwing.
+    private func pollWhilePending() {
+        guard isStarted, pollTask == nil, pending != nil else { return }
+        pollTask = Task { [weak self, interval = policy.pollInterval] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: nanoseconds(interval, fallback: 60))
+                guard let self, !Task.isCancelled else { return }
+                guard pending != nil else {
+                    pollTask = nil
+                    return
+                }
+                await evaluate()
+            }
+        }
+    }
+
+    /// For `stop()` alone; see `pollWhilePending()` for why.
+    private func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     // MARK: - Being handed an update

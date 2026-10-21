@@ -173,9 +173,12 @@ below meaningful.
 
 ### Polling and escalation
 
-The gate is evaluated once a minute, plus immediately when an update is handed
-over, when the screen locks, and when the display sleeps — quiet is guaranteed in
-those last two, and waiting up to a minute to notice is pointless.
+While an update is waiting, the gate is evaluated once a minute, plus
+immediately when the update is handed over, when the screen locks, and when the
+display sleeps — quiet is guaranteed in those last two, and waiting up to a
+minute to notice is pointless. With nothing waiting, which is nearly all the
+time, there is no timer at all: the process is never woken just to find that
+out.
 
 After 14 days of continuous waiting, `onWaitingTooLong` fires once and the host
 decides whether to say anything. Tiptoe keeps waiting either way. Given the
