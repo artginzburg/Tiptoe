@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Core, with no dependencies at all
         run: swift test
       - name: With the GitHub Releases adapter

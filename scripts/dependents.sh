@@ -20,12 +20,18 @@ skip=(
   "ManagementMO/wakelease"            # pre-release derivative of Adrafinil, 2026-10-21
 )
 
-found=$(
-  for file in Package.resolved Package.swift project.pbxproj; do
-    gh api -X GET search/code -f q="\"artginzburg/Tiptoe\" filename:$file" \
-      --jq '.items[].repository.full_name'
-  done | sort -u
-)
+# One request, filtered here by path: code search allows only a few a minute,
+# and the token Actions hands out runs into that on the second.
+search() {
+  gh api -X GET search/code -f q='"artginzburg/Tiptoe"' -f per_page=100 \
+    --jq '.items[] | select(.path | test("(^|/)(Package\\.resolved|Package\\.swift|project\\.pbxproj)$")) | .repository.full_name'
+}
+for attempt in 1 2 3; do
+  if found=$(search); then break; fi
+  [ "$attempt" = 3 ] && exit 1
+  sleep 60
+done
+found=$(sort -u <<<"$found")
 # The apps the README already lists match these searches, so an empty answer
 # is a token that cannot search code, not a world with no dependents.
 if [ -z "$found" ]; then
