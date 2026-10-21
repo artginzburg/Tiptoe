@@ -256,7 +256,7 @@ what Tiptoe adds is the decision to call it, and that is what the tests cover.
 CI on `macos-latest` builds and tests with each trait; the README carries the
 badge.
 
-## Platform and licence
+## Platform and license
 
 `.macOS(.v12)`. The core alone would run on 11 — `os.Logger` is the only thing
 above 10.15 it touches — but SPM declares platforms per package, not per target,

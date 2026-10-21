@@ -69,7 +69,7 @@ public final class TiptoeGitHub {
 
     /// Fired once when checks have been failing for about a day, with the most
     /// recent error. A wrong repository name, a repository gone private, a
-    /// release layout upstream stopped recognising: all of them look exactly
+    /// release layout upstream stopped recognizing: all of them look exactly
     /// like "no update available" from the outside, forever.
     public var onChecksFailing: ((any Error) -> Void)?
 

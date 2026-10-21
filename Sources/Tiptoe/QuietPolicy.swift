@@ -64,7 +64,7 @@ nonisolated public struct QuietPolicy: Sendable, Equatable {
 
     /// Ascending by ``Rung/after``; the first rung starts at zero — an
     /// invariant ``rung(waitedFor:)`` relies on, which is why the ladder is
-    /// only ever replaced through an initialiser that checks it.
+    /// only ever replaced through an initializer that checks it.
     public private(set) var rungs: [Rung]
     /// How long a wait has to run before the host is told about it, once.
     public var escalateAfter: TimeInterval

@@ -220,6 +220,6 @@ The bundle swap itself is not tested here. A real end-to-end test needs a signed
 
 GitHub's dependents page stays empty for Swift packages, so this list is kept by hand; `scripts/dependents.sh` finds public repositories it does not name yet. Shipping Tiptoe in an app? A pull request adding a line here is welcome.
 
-## Licence
+## License
 
 [MIT](LICENSE).

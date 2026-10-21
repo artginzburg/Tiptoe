@@ -23,7 +23,7 @@ extension Tiptoe {
         /// It is the default because the alternative is a safety check that
         /// switches itself off: `appVersion` is what tells a wait recorded by
         /// a previous version of the app from one this version is still
-        /// serving, and a host customising its sensors has no reason to want
+        /// serving, and a host customizing its sensors has no reason to want
         /// that lost. A test that cares passes its own closure regardless.
         public static let liveAppVersion: @Sendable () -> String = {
             Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""

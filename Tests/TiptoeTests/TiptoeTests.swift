@@ -316,7 +316,7 @@ private final class Harness {
 /// can spell one version two ways. `v1.4.0` landing where `1.4` now runs is
 /// still the update that was waiting.
 @MainActor
-@Test func anUpdateThatLandedSomeOtherWayIsStillRecognisedAcrossSpellings() {
+@Test func anUpdateThatLandedSomeOtherWayIsStillRecognizedAcrossSpellings() {
     let harness = Harness(appVersion: "1.4") { store in
         store.waitingSince = Date(timeIntervalSince1970: 900_000)
         store.pendingVersion = "v1.4.0"

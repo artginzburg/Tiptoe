@@ -36,9 +36,9 @@ public final class Tiptoe {
     /// package pays, all day, for the 99% of the time no update is waiting.
     private var pollTask: Task<Void, Never>?
     private var isStarted = false
-    /// Each observer with the centre it came from: the screen-lock notification
+    /// Each observer with the center it came from: the screen-lock notification
     /// is distributed, the rest are the workspace's, and an observer must be
-    /// removed from the centre that registered it.
+    /// removed from the center that registered it.
     private var observers: [(center: NotificationCenter, token: any NSObjectProtocol)] = []
     /// Set by `stop()`, cleared by `start()`. `evaluate()` checks it so an
     /// already-queued tick — the one `hold()` spawns, or one that was mid-gate-
@@ -362,7 +362,7 @@ public final class Tiptoe {
             // The process survived, so nothing actually changed to the wait
             // itself: undo the bookkeeping above regardless of `retryable` —
             // the whole record of the wait goes back, so the clock keeps
-            // running either way, and the next launch still recognises it as
+            // running either way, and the next launch still recognizes it as
             // this app's own unfinished wait rather than a stale one.
             store.justUpdatedTo = nil
             store.waitingSince = pending.waitingSince
@@ -397,7 +397,7 @@ public final class Tiptoe {
             observe(name, on: workspace)
         }
         // Locking the screen — the deliberate "I am leaving" — posts nothing
-        // through the workspace centre; it is a distributed notification, and
+        // through the workspace center; it is a distributed notification, and
         // an undocumented one, which is why it is watched alongside the two
         // above rather than instead of them.
         observe(Notification.Name("com.apple.screenIsLocked"), on: DistributedNotificationCenter.default())

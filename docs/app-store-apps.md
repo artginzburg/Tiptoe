@@ -15,7 +15,7 @@ sandboxed app's own bundle.
 Measured on a real dual-channel app, not reasoned about:
 
 - **Package traits do work in Xcode.** `traits = (SparkleSupport,)` on the
-  package reference in `project.pbxproj` is honoured; without it the dependency
+  package reference in `project.pbxproj` is honored; without it the dependency
   resolves nothing at all. That part is fine.
 - **But a SwiftPM product links into every configuration of a target.** There is
   no way to vary it. Linking `TiptoeSparkle` put two
