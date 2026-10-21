@@ -212,6 +212,14 @@ Every rule of the ladder, the host veto, the gate timeout, and the escalation af
 
 The bundle swap itself is not tested here. A real end-to-end test needs a signed, notarized build, because mxcl/AppUpdater checks the app's Team ID and an ad-hoc build fails that check by design. That swap is upstream's code, and it has its own tests; what Tiptoe adds is the decision of *when* to call it, and that decision is what these tests cover.
 
+## Used by
+
+- [WheelClick](https://wheelclick.app): middle click and more gestures for the trackpad. Sparkle adapter, compiled into the target.
+- [Adrafinil](https://github.com/kageroumado/adrafinil): keeps the Mac awake only while AI coding agents are working. GitHub adapter.
+- [Phosphene](https://github.com/kageroumado/phosphene): video wallpapers, picked from System Settings' Wallpaper pane. GitHub adapter.
+
+GitHub's dependents page stays empty for Swift packages, so this list is kept by hand; `scripts/dependents.sh` finds public repositories it does not name yet. Shipping Tiptoe in an app? A pull request adding a line here is welcome.
+
 ## Licence
 
 [MIT](LICENSE).

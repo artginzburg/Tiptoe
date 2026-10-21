@@ -1,0 +1,50 @@
+name: Dependents
+
+# GitHub's dependents page stays empty for Swift packages, so the README's
+# "Used by" list is kept by hand. This looks for public repositories it misses,
+# once a week, and says so in an issue.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find apps the README does not name
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          scripts/dependents.sh | tee found.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" = 10 ]; then echo "new=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          exit "$status"
+      - name: Say so in an issue
+        if: steps.find.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="New apps ship Tiptoe"
+          {
+            echo "Public repositories that reference Tiptoe and the README's \"Used by\" list does not name:"
+            echo
+            grep '^NEW' found.txt | awk '{print "- " $3}'
+            echo
+            echo "Add a line to the README for each one worth listing, or put it in the skip list in scripts/dependents.sh with the reason."
+          } > body.md
+          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi
