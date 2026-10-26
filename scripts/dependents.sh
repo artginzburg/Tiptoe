@@ -26,10 +26,26 @@ search() {
   gh api -X GET search/code -f q='"artginzburg/Tiptoe"' -f per_page=100 \
     --jq '.items[] | select(.path | test("(^|/)(Package\\.resolved|Package\\.swift|project\\.pbxproj)$")) | .repository.full_name'
 }
-for attempt in 1 2 3; do
-  if found=$(search); then break; fi
-  [ "$attempt" = 3 ] && exit 1
-  sleep 60
+# The limit is not this repository's alone: the very first request can come
+# back 429, and GitHub says how long to wait — 7 s on 2026-10-21, 731 s on
+# 2026-10-26, where three fixed one-minute retries gave up. So wait what it
+# says, within a budget. A limit still standing after that is a busy week,
+# not a broken check: say so and let next week's run look. Any other failure
+# still fails the job.
+budget=1800
+err=$(mktemp)
+while :; do
+  if found=$(search 2>"$err"); then rm -f "$err"; break; fi
+  wait=$(sed -n 's/.*try again in \([0-9]*\).*(HTTP 429).*/\1/p' "$err" | tail -1)
+  if [ -z "$wait" ]; then cat "$err" >&2; exit 1; fi
+  wait=$((wait + 5))
+  if [ "$wait" -gt "$budget" ]; then
+    echo "::warning::code search is rate-limited for another ${wait}s; next week's run will look"
+    exit 0
+  fi
+  echo "code search rate-limited, waiting ${wait}s" >&2
+  sleep "$wait"
+  budget=$((budget - wait))
 done
 found=$(sort -u <<<"$found")
 # The apps the README already lists match these searches, so an empty answer
