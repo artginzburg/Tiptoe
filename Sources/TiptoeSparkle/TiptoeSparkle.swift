@@ -79,14 +79,31 @@ public final class TiptoeSparkle: NSObject {
         // the person's preference to make. Without it, though, nothing here
         // ever runs and the log would otherwise be empty — which is the worst
         // possible symptom for a package whose whole job is to be invisible.
+        //
+        // Only the developer's omission is an error: an Info.plist that never
+        // enables automatic downloads. A person who switched them off in the
+        // app has made the choice this comment defends, and an error line on
+        // every launch of their Mac would be noise, so that case is a debug
+        // line.
         if !controller.updater.automaticallyDownloadsUpdates {
-            log.error("Sparkle is not downloading updates automatically, so Tiptoe will never be handed one: set SUAutomaticallyUpdate (and SUEnableAutomaticChecks) to true in the app's Info.plist")
+            if Self.hostEnablesAutomaticDownloads(Bundle.main.infoDictionary) {
+                log.debug("Automatic downloads are switched off in this app's settings, so Tiptoe stays idle until they are switched back on")
+            } else {
+                log.error("Sparkle is not downloading updates automatically, so Tiptoe will never be handed one: set SUAutomaticallyUpdate (and SUEnableAutomaticChecks) to true in the app's Info.plist")
+            }
         }
         tiptoe.start()
         // A schedule asked for before the updater existed was stored, not
         // armed; this is where it becomes real.
         alignedChecks?.arm()
         return self
+    }
+
+    /// Whether the host's Info.plist turns automatic downloads on: the
+    /// developer's half of `automaticallyDownloadsUpdates`, the person's
+    /// setting being the other.
+    static func hostEnablesAutomaticDownloads(_ info: [String: Any]?) -> Bool {
+        (info?["SUAutomaticallyUpdate"] as? Bool) == true
     }
 
     public func stop() {
